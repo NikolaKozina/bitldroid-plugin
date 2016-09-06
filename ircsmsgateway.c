@@ -29,6 +29,12 @@ static gboolean connection_receive(gpointer data, gint fd, b_input_condition con
 
 void handle_sentnotification(struct im_connection *ic, char* messageline);
 
+
+const MSG_REGISTER = 'R';
+const MSG_SENT = 'S';
+const MSG_DELIVERED = 'D';
+const MSG_CONTACTS = 'X';
+
 static void androidsms_login(account_t *acc)
 {
     struct im_connection *ic = imcb_new(acc);
@@ -161,8 +167,36 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
             (char *)&serv_addr.sin_addr.s_addr,
             server->h_length);
     serv_addr.sin_port=htons(portno);
-    connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
-    write(sockfd,androidmessage,strlen(androidmessage));
+
+           struct timeval timeout;
+           timeout.tv_sec=2;
+           timeout.tv_usec=0;
+           if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
+               error("socket option set failed\n");
+           if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
+               error("socket option set failed\n");
+
+    int retval;
+    retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
+    printf("Connect retval: %d\n",retval);
+    printf("Errno: %d\n",errno);
+    printf("who: %s\n",who);
+    if (retval>=0) 
+        write(sockfd,androidmessage,strlen(androidmessage));
+    else
+    {
+        int bufsize;
+        char *errmessage_fmt="/me [%c%d%s%c]: %s";
+        char *errmessage;
+        char *reason="Unable to connect";
+        int color=4;
+        bufsize=strlen(reason)+strlen(errmessage_fmt)+strlen(message);
+        errmessage=g_malloc(bufsize);//ZZ
+        g_snprintf(errmessage,bufsize,errmessage_fmt,0x03,color,reason,0x03,message);
+
+        printf("MSMSMS:  %s\n",errmessage);
+        imcb_buddy_msg(ic,who,errmessage,0,0);
+    }
     g_free(androidmessage);
     close(sockfd);
 
@@ -381,7 +415,9 @@ void handle_sentnotification(struct im_connection *ic, char* messageline)
     number=g_malloc(sizeof(char)*(end-start+3));
     memcpy(number,messageline+start+1,end-start-1);
     number[end-start]='\0';
+    printf("NUM: %s\n",number);
     format_phonenumber(number);
+    printf("NUm: %s\n",number);
 
     printf("result %d\n",result);
     printf("strresult %s\n",strresult);
@@ -505,6 +541,8 @@ static void send_contact_request(account_t *acc)
            timeout.tv_usec=0;
            if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
                error("socket option set failed\n");
+           if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
+               error("socket option set failed\n");
           // */
         int retval;
 
@@ -517,6 +555,7 @@ static void send_contact_request(account_t *acc)
             retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
             printf("connected %i\n",retval);
             printf("  errno %i\n",errno);
+            perror("requesting contacts");
             printf("  portno %d\n",portno);
             retval=0;
         }
@@ -525,6 +564,48 @@ static void send_contact_request(account_t *acc)
         printf("wrote\n");
         close(sockfd);
     }
+}
+
+static void register_withserver(struct im_connection *ic)
+{
+
+    int sockfd, portno, n;
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
+
+    char *message;
+
+    account_t *acc;
+    acc=ic->acc;
+
+    //portno=8888;
+    portno=set_getint(&acc->set, "port");
+    sockfd=socket(AF_INET, SOCK_STREAM, 0);
+    //server=gethostbyname("192.168.1.115");
+    server=gethostbyname( set_getstr(&acc->set, "server") );
+    bzero((char *) &serv_addr,sizeof(serv_addr));
+    serv_addr.sin_family=AF_INET;
+    bcopy((char *)server->h_addr,
+            (char *)&serv_addr.sin_addr.s_addr,
+            server->h_length);
+    serv_addr.sin_port=htons(portno);
+
+           struct timeval timeout;
+           timeout.tv_sec=2;
+           timeout.tv_usec=0;
+           if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
+               error("socket option set failed\n");
+           if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
+               error("socket option set failed\n");
+
+    int retval;
+    retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
+    //printf("Register Connect retval: %d\n",retval);
+    //printf("register Errno: %d\n",errno);
+    //printf("register who: %s\n",who);
+    if (retval>=0) 
+        write(sockfd,message,strlen(message));
+
 }
 
 static void setup_udp(struct sms_data *sd, account_t *acc)
@@ -636,16 +717,16 @@ static gboolean connection_receive(gpointer data, gint fd, b_input_condition con
             line[len]='\0';
             //printf("LNL%d\n",len);
             offset=next-client_message+1;
-            if (line[0]=='X')
+            if (line[0]==MSG_CONTACTS)
             {
                 //printf("handle_contact\n");
                 handle_contact(ic,line);
             }
             else if (line[0]=='C') 
                 imcb_log(ic,line);
-            else if (line[0]=='D')
+            else if (line[0]==MSG_DELIVERED)
                 imcb_log(ic,line);
-            else if (line[0]=='S')
+            else if (line[0]==MSG_SENT)
             {
                 imcb_log(ic,line);
                 handle_sentnotification(ic,line);
@@ -735,8 +816,8 @@ static gboolean udp_receive(gpointer data, gint fd, b_input_condition cond)
 
 static void androidsms_logout(struct im_connection *ic) 
 {
-    struct sms_data *sd=ic->proto_data;
     printf("\nXX logout XX\n");
+    struct sms_data *sd=ic->proto_data;
     imcb_log(ic, "logging out");
     b_event_remove(sd->acceptevent);
     printf("SEGFAULT\n");
