@@ -29,11 +29,10 @@ static gboolean connection_receive(gpointer data, gint fd, b_input_condition con
 
 void handle_sentnotification(struct im_connection *ic, char* messageline);
 
-
-const MSG_REGISTER = 'R';
-const MSG_SENT = 'S';
-const MSG_DELIVERED = 'D';
-const MSG_CONTACTS = 'X';
+const char MSG_REGISTER = 'R';
+const char MSG_SENT = 'S';
+const char MSG_DELIVERED = 'D';
+const char MSG_CONTACTS = 'X';
 
 static void androidsms_login(account_t *acc)
 {
@@ -197,7 +196,10 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
         printf("MSMSMS:  %s\n",errmessage);
         imcb_buddy_msg(ic,who,errmessage,0,0);
     }
+
+    printf("gfree2\n");
     g_free(androidmessage);
+    printf("gfree2o\n");
     close(sockfd);
 
 
@@ -213,7 +215,9 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
     //st = skype_printf(ic, "%s\n", message);
     //else
     //st = skype_printf(ic, "MESSAGE %s %s\n", nick, message);
+    printf("gfree3\n");
     g_free(nick);
+    printf("gfree3o\n");
     printf("message sent(?)\n");
 
     return st;
@@ -298,9 +302,13 @@ void handle_contact(struct im_connection *ic, char* contactline)
             //printf(" done add buddy: %s\n", number);
             sd->lock_buddy=0;
             //printf("FREE\n");
+    printf("gfree4\n");
             g_free(namea);
+    printf("gfree4o\n");
         }
+    printf("gfree5\n");
         g_free(number);
+    printf("gfree5o\n");
     }
 }
 
@@ -318,7 +326,9 @@ static void androidsms_add_buddy(struct im_connection *ic, char *who, char *grou
     if (!group) {
         //skype_printf(ic, "SET USER %s BUDDYSTATUS 2 Please authorize me\n",
         //		nick);
+    printf("gfree6\n");
         g_free(nick);
+    printf("gfree6o\n");
     } else {
         //struct skype_group *sg = skype_group_by_name(ic, group);
 
@@ -339,12 +349,16 @@ void handle_message(struct im_connection *ic, char* messageline)
     char *number;
     char *namea;
     int len;
+    printf("substr stuff\n");
     if ((sub=strstr(messageline,"::"))!=NULL) {
         //imcb_buddy_msg(ic, "skypeconsole","else",0,0);
+    printf("getnumber\n");
         number=(char*)g_malloc(sizeof(char)*(sub-messageline)+1); 
         if ((strstr(messageline,";"))!=NULL){
             len=strstr(messageline,";")-sub;
+            printf("mallocshit\n");
             namea=g_malloc(sizeof(char)*(len));
+            printf("mallocedshit\n");
             memcpy(number,messageline,sub-messageline);
             memcpy(namea, sub+2, len-2);
             namea[len-2]='\0';
@@ -364,9 +378,15 @@ void handle_message(struct im_connection *ic, char* messageline)
             char* nick;
             nick=user->nick;
 
-            fullcommand=g_malloc(sizeof(char) * (strlen(nick)+strlen(script)+strlen(namea) +6 ) );
-            sprintf(fullcommand,"%s \"%s\" \"%s\"",script,nick,namea);
+            printf("cmd stuff\n");
+            int cmdlen;
+            cmdlen=sizeof(char) * (strlen(nick)+strlen(script)+strlen(namea) +7 );
+            fullcommand=g_malloc( cmdlen );
+            int retval;
+            retval=g_snprintf(fullcommand,cmdlen,"%s \"%s\" \"%s\"",script,nick,namea);
+            printf("%d/%d\n",retval,cmdlen);
             system(fullcommand);
+            printf("cmd stuff done\n");
             //system("/home/impulse/src/scripts/inc/android_sms_message test");
         }
     }
@@ -547,15 +567,22 @@ static void send_contact_request(account_t *acc)
         int retval;
 
         retval=-2;
-        //while(retval<0)
+            printf("sending contact request  (function) to |%s:%s\n", set_getstr(&acc->set, "server"), set_getstr(&acc->set, "port"));
+
+            char* phone_str=g_malloc(200);
+            retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
+
+        while(retval)
         {
             printf("sending contact request  (function) to |%s:%s\n", set_getstr(&acc->set, "server"), set_getstr(&acc->set, "port"));
 
             char* phone_str=g_malloc(200);
             retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
             printf("connected %i\n",retval);
-            printf("  errno %i\n",errno);
-            perror("requesting contacts");
+            if (retval) {
+                printf("  errno %i\n",errno);
+                perror("requesting contacts");
+            }
             printf("  portno %d\n",portno);
             retval=0;
         }
@@ -578,11 +605,17 @@ static void register_withserver(struct im_connection *ic)
     account_t *acc;
     acc=ic->acc;
 
-    //portno=8888;
+    printf("Register\n\n");
+    message=g_malloc(sizeof(char)*3);//Just send a single 'R' for now ZZ
+
+    message[0]=MSG_REGISTER;
+    message[1]='\n';
+    message[2]='\0';
+
     portno=set_getint(&acc->set, "port");
     sockfd=socket(AF_INET, SOCK_STREAM, 0);
-    //server=gethostbyname("192.168.1.115");
     server=gethostbyname( set_getstr(&acc->set, "server") );
+    printf("  with: %s:%d\n",set_getstr(&acc->set, "server"), set_getint(&acc->set, "port"));
     bzero((char *) &serv_addr,sizeof(serv_addr));
     serv_addr.sin_family=AF_INET;
     bcopy((char *)server->h_addr,
@@ -600,11 +633,16 @@ static void register_withserver(struct im_connection *ic)
 
     int retval;
     retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
-    //printf("Register Connect retval: %d\n",retval);
-    //printf("register Errno: %d\n",errno);
-    //printf("register who: %s\n",who);
-    if (retval>=0) 
+    if (retval>=0) {
         write(sockfd,message,strlen(message));
+        printf("Sent registration message\n");
+    }else{
+        printf("Register Connect retval: %d\n",retval);
+        printf("register Errno: %d\n",errno);
+        perror("Register ");
+    }
+
+    close(sockfd);
 
 }
 
@@ -692,6 +730,7 @@ static gboolean connection_receive(gpointer data, gint fd, b_input_condition con
     struct im_connection *ic=data;
     char client_message[2000];
     int read_size;
+    printf("connection_receive\n");
 
     //printf("receive data\n");
 
@@ -706,13 +745,16 @@ static gboolean connection_receive(gpointer data, gint fd, b_input_condition con
         int len;
         int offset=0;
         client_message[read_size]='\0';
+    printf("while\n");
         while((next=strchr(client_message+offset,'\n'))>0 && offset<read_size)
         {
             //printf("line\n");
             len=next-(client_message+offset);
             line=g_malloc(sizeof(char)*(len+1));
             //printf("MALLOC4: %x\n",line);
+    printf("memcpy\n");
             memcpy(line,client_message+offset,len);
+    printf("memcpyd\n");
             //printf("%s\n",line);
             line[len]='\0';
             //printf("LNL%d\n",len);
@@ -736,7 +778,9 @@ static gboolean connection_receive(gpointer data, gint fd, b_input_condition con
                 printf("handle_message\n");
                 handle_message(ic,line);
             }
+            printf("gfree1\n");
             g_free(line);
+            printf("gfree1o\n");
         }
         printf("onreceive TRUE\n");
         //close(fd);
@@ -806,6 +850,7 @@ static gboolean udp_receive(gpointer data, gint fd, b_input_condition cond)
 
 
     send_contact_request(acc);
+    register_withserver(ic);
 
 
 
