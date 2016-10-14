@@ -388,6 +388,7 @@ void handle_message(struct im_connection *ic, char* messageline)
             system(fullcommand);
             printf("cmd stuff done\n");
             //system("/home/impulse/src/scripts/inc/android_sms_message test");
+            //
         }
     }
 
