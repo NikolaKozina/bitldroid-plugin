@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS+=-I/home/impulse/usr/bitlbee-3.4 -I/home/impulse/usr/bitlbee-3.4/lib -I/home/impulse/usr/bitlbee-3.4/protocols -I.
+CFLAGS+=-I/home/impulse/usr/bitlbee-3.5.1 -I/home/impulse/usr/bitlbee-3.5.1/lib -I/home/impulse/usr/bitlbee-3.5.1/protocols -I.
 CFLAGS+=-pthread -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include
 CFLAGS+=`pkg-config --cflags --libs glib-2.0`
 ANDROIDSMS=androidsms.so

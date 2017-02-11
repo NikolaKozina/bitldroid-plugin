@@ -1,9 +1,10 @@
-
+//change memcpy to strcpy
 #define _XOPEN_SOURCE
 #define _BSD_SOURCE
 #include <stdlib.h>
 #include <poll.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <bitlbee.h>
@@ -27,7 +28,7 @@ static gboolean udp_receive(gpointer data, gint fd, b_input_condition cond);
 static gboolean connection_accept(gpointer data, gint fd, b_input_condition cond);
 static gboolean connection_receive(gpointer data, gint fd, b_input_condition cond);
 
-void handle_sentnotification(struct im_connection *ic, char* messageline);
+void handle_sentnotification(struct im_connection *ic, char* messageline, int len);
 
 const char MSG_REGISTER = 'R';
 const char MSG_SENT = 'S';
@@ -167,13 +168,13 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
             server->h_length);
     serv_addr.sin_port=htons(portno);
 
-           struct timeval timeout;
-           timeout.tv_sec=2;
-           timeout.tv_usec=0;
-           if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
-               error("socket option set failed\n");
-           if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
-               error("socket option set failed\n");
+    struct timeval timeout;
+    timeout.tv_sec=2;
+    timeout.tv_usec=0;
+    if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
+        error("socket option set failed\n");
+    if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
+        error("socket option set failed\n");
 
     int retval;
     retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
@@ -195,6 +196,7 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
 
         printf("MSMSMS:  %s\n",errmessage);
         imcb_buddy_msg(ic,who,errmessage,0,0);
+        g_free(errmessage);
     }
 
     printf("gfree2\n");
@@ -240,21 +242,6 @@ void format_phonenumber(char* number)
     //printf("number[%s]\n",number);
 }
 
-void format_phonenumber_old(char* number)
-{
-    int off=0;
-    int len;
-    len=strlen(number);
-    int i=0;
-    while(!(isdigit(number[i]) && number[i]!='1') && i<len)
-        i++;
-
-    for (i=i;i<len;i++)
-        if (isdigit(number[i]))
-            number[off++]=number[i];
-    number[off]='\0';
-}
-
 //Handle getting contact list from phone
 void handle_contact(struct im_connection *ic, char* contactline)
 {
@@ -263,6 +250,8 @@ void handle_contact(struct im_connection *ic, char* contactline)
     char *number;
     char *namea;
     int len;
+    printf("handle contact\n");
+
     if ((sub=strstr(contactline,"::"))!=NULL)
     {
         number=(char*)g_malloc(sizeof(char)*(sub-contactline)+100); 
@@ -295,6 +284,7 @@ void handle_contact(struct im_connection *ic, char* contactline)
             sd->lock_buddy=1;
 
             printf("   start add buddy: [%s] [%s] \n", number,namea);
+
             imcb_add_buddy(ic, number, NULL);
             //printf("ADDED\n");
             imcb_buddy_nick_hint(ic,number,namea);//qq used to be namea instead of asdf
@@ -302,13 +292,13 @@ void handle_contact(struct im_connection *ic, char* contactline)
             //printf(" done add buddy: %s\n", number);
             sd->lock_buddy=0;
             //printf("FREE\n");
-    printf("gfree4\n");
+            printf("gfree4\n");
             g_free(namea);
-    printf("gfree4o\n");
+            printf("gfree4o\n");
         }
-    printf("gfree5\n");
+        printf("gfree5\n");
         g_free(number);
-    printf("gfree5o\n");
+        printf("gfree5o\n");
     }
 }
 
@@ -326,9 +316,9 @@ static void androidsms_add_buddy(struct im_connection *ic, char *who, char *grou
     if (!group) {
         //skype_printf(ic, "SET USER %s BUDDYSTATUS 2 Please authorize me\n",
         //		nick);
-    printf("gfree6\n");
+        printf("gfree6\n");
         g_free(nick);
-    printf("gfree6o\n");
+        printf("gfree6o\n");
     } else {
         //struct skype_group *sg = skype_group_by_name(ic, group);
 
@@ -342,76 +332,73 @@ static void androidsms_add_buddy(struct im_connection *ic, char *who, char *grou
 
 }
 
-void handle_message(struct im_connection *ic, char* messageline)
+void handle_message(struct im_connection *ic, char* message, int msglen)
 {
-    char *sub;
-    //imcb_chat_log();
-    char *number;
-    char *namea;
-    int len;
-    printf("substr stuff\n");
-    if ((sub=strstr(messageline,"::"))!=NULL) {
-        //imcb_buddy_msg(ic, "skypeconsole","else",0,0);
-    printf("getnumber\n");
-        number=(char*)g_malloc(sizeof(char)*(sub-messageline)+1); 
-        if ((strstr(messageline,";"))!=NULL){
-            len=strstr(messageline,";")-sub;
-            printf("mallocshit\n");
-            namea=g_malloc(sizeof(char)*(len));
-            printf("mallocedshit\n");
-            memcpy(number,messageline,sub-messageline);
-            memcpy(namea, sub+2, len-2);
-            namea[len-2]='\0';
-            number[sub-messageline]='\0';
-            format_phonenumber(number);
-            //imcb_buddy_msg(ic, "skypeconsole",number,0,0);
-            imcb_buddy_msg(ic, number,namea,0,0);
-            //char *testmsg="/me DIDN'T RECEIVE (NO SERVICE): ";
-            //imcb_buddy_msg(ic,number,testmsg,0,0);
+    char* delimiter;
+    char* phonenumber;
+    char* text;
+    int phonelen, textlen;
 
-            char* script;//="/home/impulse/src/scripts/inc/android_sms_message";
-            script=set_getstr(&(ic->acc->set), "script");//QQ
-            char* fullcommand;
+    delimiter=memchr(message,0x1E,msglen);
+    phonelen=delimiter-message+1; //add a byte for the string terminator
+    phonenumber=g_malloc(phonelen);
+    textlen=msglen-phonelen+1; //add a byte for the string terminator
+    text=g_malloc(textlen);
 
-            bee_user_t *user;
-            user=  bee_user_by_handle(ic->bee,ic,number);
-            char* nick;
-            nick=user->nick;
+    memcpy(phonenumber,message,delimiter-message);
+    memcpy(text,delimiter+1,textlen);
 
-            printf("cmd stuff\n");
-            int cmdlen;
-            cmdlen=sizeof(char) * (strlen(nick)+strlen(script)+strlen(namea) +7 );
-            fullcommand=g_malloc( cmdlen );
-            int retval;
-            retval=g_snprintf(fullcommand,cmdlen,"%s \"%s\" \"%s\"",script,nick,namea);
-            printf("%d/%d\n",retval,cmdlen);
-            system(fullcommand);
-            printf("cmd stuff done\n");
-            //system("/home/impulse/src/scripts/inc/android_sms_message test");
-            //
-        }
-    }
+    phonenumber[phonelen-1]='\0';
+    text[textlen-1]='\0';
+
+    format_phonenumber(phonenumber);
+    
+    imcb_buddy_msg(ic, phonenumber, text, 0, 0);
 
 
+    //Run user defined script (script setting)
+    char* script;//="/home/impulse/src/scripts/inc/android_sms_message";
+    script=set_getstr(&(ic->acc->set), "script");//QQ
+    char* fullcommand;
+
+    bee_user_t *user;
+    user=  bee_user_by_handle(ic->bee, ic, phonenumber);
+    char* nick;
+    nick=user->nick;
+
+    printf("cmd stuff\n");
+    int cmdlen;
+    cmdlen=sizeof(char) * (strlen(nick)+strlen(script)+strlen(text) +7 );
+    fullcommand=g_malloc( cmdlen );
+    int retval;
+    retval=g_snprintf(fullcommand,cmdlen,"%s \"%s\" \"%s\"",script,nick,text);
+    printf("%d/%d\n",retval,cmdlen);
+    system(fullcommand);
+    printf("cmd stuff done\n");
+    g_free(fullcommand);
+    g_free(phonenumber);
+    g_free(text);
 }
 
-void handle_sentnotification(struct im_connection *ic, char* messageline)
+void handle_sentnotification(struct im_connection *ic, char* messageline, int len)
 {
     char *sub;
     char *number;
     char *namea;
     char *subline;
-    int len;
 
     int start,end;
     int id;
     char *strid;
+    char *stridoff;
     int result;
     char *strresult;
+    char *strresultoff;
     char *message;
 
     printf("HANDLE SENT NOTIFICATION\n");
 
+    messageline[len]='\0';
     start=index(messageline,'X')-messageline;
     end=index(messageline,':')-messageline;
     //return;
@@ -425,14 +412,14 @@ void handle_sentnotification(struct im_connection *ic, char* messageline)
     result=strchr(messageline+id,'/')+1-messageline;
     message=index(messageline,':')+2;
 
-    strid=strid+id;
-    strid[result-3]='\0';
-    printf("strid %s\n",strid);
+    stridoff=strid+id;
+    stridoff[result-3]='\0';
+    printf("stridoff %s\n",stridoff);
     printf("id %d\n",id);
 
-    strresult=strresult + result;
-    strresult[index(strresult,'X')-strresult]='\0';
-   
+    strresultoff=strresult + result;
+    strresultoff[index(strresultoff,'X')-strresultoff]='\0';
+
     number=g_malloc(sizeof(char)*(end-start+3));
     memcpy(number,messageline+start+1,end-start-1);
     number[end-start]='\0';
@@ -441,9 +428,11 @@ void handle_sentnotification(struct im_connection *ic, char* messageline)
     printf("NUm: %s\n",number);
 
     printf("result %d\n",result);
-    printf("strresult %s\n",strresult);
-    id=atoi(strid);
-    result=atoi(strresult);
+    printf("strresultoff %s\n",strresultoff);
+    id=atoi(stridoff);
+    g_free(strid);
+    result=atoi(strresultoff);
+    g_free(strresult);
     printf("converted id %d\n",id);
 
     char *errmessage;
@@ -458,44 +447,46 @@ void handle_sentnotification(struct im_connection *ic, char* messageline)
     char *errmessage_fmt="/me [%c%d%s%c]: %s";
     switch(result)
     {
-    case -1:
-        imcb_log(ic, "OK");
-        reason=success;
-        color=2;
-        break;
-    case 1:
-        //imcb_log(ic, "FAILED");
-        //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
-        reason=fail_general;
-        color=4;
-        break;
-    case 2:
-        //imcb_log(ic, "PDU");
-        //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
-        reason=fail_pdu;
-        color=4;
-        break;
-    case 3:
-        //imcb_log(ic, "NO SERVICE");
-        //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
-        reason=fail_service;
-        color=4;
-        break;
-    case 4:
-        //imcb_log(ic, "NO SERVICE");
-        //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
-        reason=fail_4;
-        color=4;
-        break;
+        case -1:
+            imcb_log(ic, "OK");
+            reason=success;
+            color=2;
+            break;
+        case 1:
+            //imcb_log(ic, "FAILED");
+            //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
+            reason=fail_general;
+            color=4;
+            break;
+        case 2:
+            //imcb_log(ic, "PDU");
+            //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
+            reason=fail_pdu;
+            color=4;
+            break;
+        case 3:
+            //imcb_log(ic, "NO SERVICE");
+            //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
+            reason=fail_service;
+            color=4;
+            break;
+        case 4:
+            //imcb_log(ic, "NO SERVICE");
+            //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
+            reason=fail_4;
+            color=4;
+            break;
     }
     if(result>-3){
         int bufsize;
         bufsize=strlen(reason)+strlen(errmessage_fmt)+strlen(message);
         errmessage=g_malloc(bufsize);//ZZ
         g_snprintf(errmessage,bufsize,errmessage_fmt,0x03,color,reason,0x03,message);
+        printf("MSMSMS:  %s\n",errmessage);
+        imcb_buddy_msg(ic,number,errmessage,0,0);
+        g_free(errmessage);
     }
-    printf("MSMSMS:  %s\n",errmessage);
-    imcb_buddy_msg(ic,number,errmessage,0,0);
+    g_free(number);
 
 
 
@@ -557,27 +548,25 @@ static void send_contact_request(account_t *acc)
         //printf("sending contact request  (function) to |%s:%s\n", set_getstr(&acc->set, "server"), set_getstr(&acc->set, "port"));
 
         ///*
-           struct timeval timeout;
-           timeout.tv_sec=2;
-           timeout.tv_usec=0;
-           if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
-               error("socket option set failed\n");
-           if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
-               error("socket option set failed\n");
-          // */
+        struct timeval timeout;
+        timeout.tv_sec=2;
+        timeout.tv_usec=0;
+        if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
+            error("socket option set failed\n");
+        if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
+            error("socket option set failed\n");
+        // */
         int retval;
 
         retval=-2;
-            printf("sending contact request  (function) to |%s:%s\n", set_getstr(&acc->set, "server"), set_getstr(&acc->set, "port"));
+        printf("sending contact request  (function) to |%s:%s\n", set_getstr(&acc->set, "server"), set_getstr(&acc->set, "port"));
 
-            char* phone_str=g_malloc(200);
-            retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
+        retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
 
         while(retval)
         {
             printf("sending contact request  (function) to |%s:%s\n", set_getstr(&acc->set, "server"), set_getstr(&acc->set, "port"));
 
-            char* phone_str=g_malloc(200);
             retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
             printf("connected %i\n",retval);
             if (retval) {
@@ -624,13 +613,13 @@ static void register_withserver(struct im_connection *ic)
             server->h_length);
     serv_addr.sin_port=htons(portno);
 
-           struct timeval timeout;
-           timeout.tv_sec=2;
-           timeout.tv_usec=0;
-           if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
-               error("socket option set failed\n");
-           if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
-               error("socket option set failed\n");
+    struct timeval timeout;
+    timeout.tv_sec=2;
+    timeout.tv_usec=0;
+    if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
+        error("socket option set failed\n");
+    if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
+        error("socket option set failed\n");
 
     int retval;
     retval=connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
@@ -642,6 +631,7 @@ static void register_withserver(struct im_connection *ic)
         printf("register Errno: %d\n",errno);
         perror("Register ");
     }
+    g_free(message);
 
     close(sockfd);
 
@@ -711,7 +701,7 @@ static gboolean connection_accept(gpointer data, gint fd, b_input_condition cond
     int client_sock;
     struct sockaddr_in server, client;
     int c;
-    //printf("accept connection\n");
+    printf("accept connection\n");
 
     c = sizeof(struct sockaddr_in);
     client_sock = accept(sd->socket_desc, (struct sockaddr *)&client, (socklen_t*)&c);
@@ -729,75 +719,170 @@ static gboolean connection_accept(gpointer data, gint fd, b_input_condition cond
 static gboolean connection_receive(gpointer data, gint fd, b_input_condition cond)
 {
     struct im_connection *ic=data;
-    char client_message[2000];
+    const READ_BUFFERSIZE=2000;
+    char client_message[READ_BUFFERSIZE];
     int read_size;
-    printf("connection_receive\n");
 
-    //printf("receive data\n");
+    static int inHead=0; //Position in header
+    static int inText=0; //Position in text
+    static unsigned char* header=NULL; //Header start (1) + message type (1) + text length (4) + Header end (1)
+    static char* fulltext;
+    static int32_t textlen;
+    char *headStart;
+    char *textStart;
 
-    read_size = recv(fd, client_message , 2000 , 0);
+    //imcb_add_buddy(ic, "12345678", NULL);
+    //return;
+
+    printf("connection receive\n");
+    read_size = recv(fd, client_message , READ_BUFFERSIZE, 0); //Reserve space for changing last char in buffer to \0
     if (read_size>0)
     {
-        //printf("READ_SIZE: %d\n",read_size);
-        //printf("MESSAGE:\n %s\n",client_message);
-        //imcb_buddy_msg(ic, "skypeconsole", "  CONNECTION ACCEPT ", 0, 0);
-        char *next;
-        char *line;
-        int len;
-        int offset=0;
-        client_message[read_size]='\0';
-    printf("while\n");
-        while((next=strchr(client_message+offset,'\n'))>0 && offset<read_size)
-        {
-            //printf("line\n");
-            len=next-(client_message+offset);
-            line=g_malloc(sizeof(char)*(len+1));
-            //printf("MALLOC4: %x\n",line);
-    printf("memcpy\n");
-            memcpy(line,client_message+offset,len);
-    printf("memcpyd\n");
-            //printf("%s\n",line);
-            line[len]='\0';
-            //printf("LNL%d\n",len);
-            offset=next-client_message+1;
-            if (line[0]==MSG_CONTACTS)
-            {
-                //printf("handle_contact\n");
-                handle_contact(ic,line);
+        printf("\n========\nread_size: %d\n\nmessage:\n",  read_size);
+        printf("%s\n", client_message);
+        int i;
+
+        for(i=0;i<read_size;i++)
+            printf("%4d - %x - %c\n",i,(unsigned char)client_message[i], client_message[i]);
+
+
+        if (inHead+inText==0){ //Are we not currently in the middle of a header or text body?
+            if ((headStart=memchr(client_message, 0x01, read_size))>0){//Is there a header start in the stream?
+                header=g_malloc(6); //Don't include EOT char (replace with \0)
+                if ((textStart=memchr(client_message, 0x02, read_size))>0){//Is there a text start (header end) in the stream?
+                    inHead=0;
+                    printf("0x02 at: %d",textStart-client_message);
+                    printf("if textStart-headStart %d\n",textStart-headStart);
+                    if (textStart-headStart==6){ //Is this a good header?
+                        memcpy(header, client_message, textStart-headStart);
+                        int j;
+                        for (j=0;j<6;j++)
+                            printf("H:  %x\n", header[j]);
+                        textlen=(header[2]<<24) + (header[3]<<16) + ((unsigned char)header[4]<<8) + (unsigned char)header[5] ;
+                        printf("textlen: %d\n",textlen);
+                        fulltext=g_malloc(textlen+1);
+
+                        printf("textlen: %d %x\n",textlen,(unsigned char)header[5]);
+                        if (read_size>textStart-client_message){//Is there more data after the header?
+                            int readlen;
+                            readlen=read_size-(textStart-client_message);
+                            printf("closeout? %d >= %d \n",inText+readlen,textlen);
+                            if (inText+ readlen >= textlen){//Is there enough data to close out the last message we were reading?
+                                memcpy(fulltext, textStart+1, textlen-inText+1);
+                                inText=0;
+                                //fulltext[textlen+1]='\0';
+                                connection_receive_parse(ic,fulltext,textlen,header[1]);
+                                g_free(header);
+                                g_free(fulltext);
+                                printf("got full message:\n%s\n",fulltext);
+                            } else {
+                                memcpy(fulltext, textStart, readlen);
+                                inText+=readlen;
+                            }
+                        }
+                    } else { //Wrong header length
+                        printf("Bad header! size: %d\n",textStart-headStart);
+                        inText=0;
+                    }
+                } else {
+                    int readlen;
+                    readlen=read_size-(headStart-client_message);
+                    printf("reading header fragment: %d\n",readlen);
+                    memcpy(header+inHead, headStart, readlen);
+                    inHead+=readlen;
+                }
             }
-            else if (line[0]=='C') 
-                imcb_log(ic,line);
-            else if (line[0]==MSG_DELIVERED)
-                imcb_log(ic,line);
-            else if (line[0]==MSG_SENT)
-            {
-                imcb_log(ic,line);
-                handle_sentnotification(ic,line);
+        } else if (inHead){
+            if ((textStart=memchr(client_message, 0x02, read_size))>0){//Is there a text start (header end) in the stream?
+                printf("textStart-client_message: %d\n",textStart-client_message);
+                printf("inHead: %d\n",inHead);
+                if ((textStart-client_message)+inHead==6){ //Is this a good header?
+                    memcpy(header+inHead, client_message, textStart-client_message);
+                    textlen=((unsigned char)header[2]<<24) + ((unsigned char)header[3]<<16) + ((unsigned char)header[4]<<8) + header[5] ;
+                    printf("h[2]<<24: %d\n",header[2]<<24);
+                    printf("h[3]<<16: %d\n",header[3]<<16);
+                    printf("h[4]<<8:  %d\n",(unsigned int)header[4]<<8);
+                    printf("h[5]:     %d\n\n",(unsigned char)header[5]);
+
+                    printf("h[2]<<24: %d\n",header[2]<<24);
+                    printf("h[3]<<16: %d\n",header[3]<<16);
+                    printf("h[4]<<8:  %d\n",(unsigned int)header[4]<<8);
+                    printf("h[5]:     %x\n",(unsigned int)header[5]);
+                    printf("TEXTLEN: %d\n",textlen);
+                    fulltext=g_malloc(textlen+2);
+                    if (read_size>textStart-client_message){//Is there more data after the header?
+                        int readlen;
+                        readlen=read_size-(textStart-client_message);
+                        if (inText+ readlen >= textlen){//Is there enough data to close out the last message we were reading?
+                            memcpy(fulltext, textStart+1, readlen);
+                            inText=0;
+                            connection_receive_parse(ic,fulltext,textlen,header[1]);
+                            g_free(header);
+                            g_free(fulltext);
+                        } else {
+                            memcpy(fulltext, textStart, readlen);
+                            inText+=readlen;
+                        }
+                    }
+                } else { //Wrong header length
+                    printf("Bad header! size: %d\n",textStart-headStart);
+                    inText=0;
+                }
+                inHead=0;
+            } else {
+                int readlen;
+                readlen=read_size;
+                memcpy(header+inHead, client_message, readlen);
+                inHead+=readlen;
             }
-            else
-            {
-                printf("handle_message\n");
-                handle_message(ic,line);
+        } else if (inText){
+            if (read_size>textStart-client_message){//Is there more data after the header?
+                int readlen;
+                readlen=read_size-(textStart-client_message);
+                if (inText+ readlen >= textlen){//Is there enough data to close out the last message we were reading?
+                    memcpy(fulltext, textStart, textlen-inText);
+                    inText=0;
+                } else {
+                    memcpy(fulltext, textStart, readlen);
+                    inText+=readlen;
+                }
             }
-            printf("gfree1\n");
-            g_free(line);
-            printf("gfree1o\n");
+
         }
-        printf("onreceive TRUE\n");
-        //close(fd);
-        return TRUE;
-    } else {
-        printf("onreceive FALSE\n");
-        close(fd);
-        return FALSE;
-        //printf("CALLBACK FALSE\n");
     }
 
-    if(read_size == 0) {
-        //puts("Client disconnected");
-        //fflush(stdout);
-    } else if(read_size == -1) {
-        perror("recv failed");
+
+    
+
+}
+
+void connection_receive_parse(struct im_connection *ic, char* message, int len, char type)
+{
+    char *offset;
+    char *line;
+
+    //imcb_add_buddy(ic, number, NULL);
+
+    switch(type){
+        case 'C':
+            printf("CONTACT MESSAGE!!!!!!!!!!!!!!!!!!!!!!!\n");
+            offset=message;
+            while(line=strchr(offset,'X'))
+            {
+                offset=strchr(line,';')+1;
+                if (offset){
+                    *offset='\0';
+                    offset++;
+                    handle_contact(ic,line);
+                }
+            }
+            break;
+        case 'M':
+            printf("handle_message\n");
+            handle_message(ic,message,len);
+            break;
+        case 'S':
+            handle_sentnotification(ic,message,len);
     }
 
 }
@@ -829,12 +914,12 @@ static gboolean udp_receive(gpointer data, gint fd, b_input_condition cond)
     }
     char *serveraddress;
     const IPBUFLEN = 30;
-    serveraddress=g_malloc(IPBUFLEN);
+    serveraddress=g_malloc(IPBUFLEN); //QQ is this malloc free'd?
     inet_ntop(AF_INET,&(sendaddr.sin_addr),serveraddress,IPBUFLEN);
     imcb_log(ic, "server address: %s",serveraddress);
     imcb_log(ic, "  retval: %d",set_setstr(&acc->set,"server",serveraddress));
     imcb_log(ic, "  set to: %s",set_getstr(&acc->set,"server"));
-    
+
     //printf("numbytes: %d \n",numbytes);
     buf[numbytes]=0;
     printf("%s\n",buf);
