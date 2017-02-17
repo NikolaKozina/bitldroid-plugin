@@ -39,7 +39,6 @@ static void androidsms_login(account_t *acc)
 {
     struct im_connection *ic = imcb_new(acc);
     struct sms_data *sd = g_new0(struct sms_data, 1);
-    imcb_log(ic,"LOGGING IN....DOING NOTHERING FUCK");
 
 #ifndef NEVER
     ic->proto_data = sd;
@@ -448,7 +447,7 @@ void handle_sentnotification(struct im_connection *ic, char* messageline, int le
     switch(result)
     {
         case -1:
-            imcb_log(ic, "OK");
+            //imcb_log(ic, "OK");
             reason=success;
             color=2;
             break;
