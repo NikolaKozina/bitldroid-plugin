@@ -367,10 +367,17 @@ void handle_message(struct im_connection *ic, char* message, int msglen)
 
     printf("cmd stuff\n");
     int cmdlen;
-    cmdlen=sizeof(char) * (strlen(nick)+strlen(script)+strlen(text) +7 );
-    fullcommand=g_malloc( cmdlen );
     int retval;
-    retval=g_snprintf(fullcommand,cmdlen,"%s \"%s\" \"%s\"",script,nick,text);
+    if (nick==0)
+    {
+        cmdlen=sizeof(char) * (strlen(phonenumber)+strlen(script)+strlen(text) +7 );
+        fullcommand=g_malloc( cmdlen );
+        retval=g_snprintf(fullcommand,cmdlen,"%s \"%s\" \"%s\"",script,phonenumber,text);
+    } else {
+        cmdlen=sizeof(char) * (strlen(nick)+strlen(script)+strlen(text) +7 );
+        fullcommand=g_malloc( cmdlen );
+        retval=g_snprintf(fullcommand,cmdlen,"%s \"%s\" \"%s\"",script,nick,text);
+    }
     printf("%d/%d\n",retval,cmdlen);
     system(fullcommand);
     printf("cmd stuff done\n");
@@ -958,7 +965,6 @@ static void androidsms_logout(struct im_connection *ic)
     g_free(sd);
     imc_logout(ic, TRUE);
     //close(sd->socket_desc);
-
 }
 
 void init_plugin(void)
