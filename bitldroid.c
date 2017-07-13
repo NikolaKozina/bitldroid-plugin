@@ -53,6 +53,12 @@ static void androidsms_login(account_t *acc)
 
     sd->socket_desc = socket(AF_INET , SOCK_STREAM , 0);
 
+    struct timeval timeout;
+    timeout.tv_sec=2;
+    timeout.tv_usec=0;
+    if (setsockopt(sd->socket_desc,SOL_SOCKET,SO_REUSEADDR|SO_REUSEPORT, (char*)&timeout,sizeof(timeout))<0)
+        error("bind socket option set failed\n");
+
     if (sd->socket_desc == -1)
     {
         printf("Could not create socket");
@@ -69,6 +75,7 @@ static void androidsms_login(account_t *acc)
     //Bind
     //imcb_log(ic,"Binding...");
     printf("bind TCP\n");
+    imcb_log(ic, "Binding listen socket on port %d", set_getint(&acc->set, "port"));
     if( bind(sd->socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0)
     {
         //print the error message
@@ -86,7 +93,7 @@ static void androidsms_login(account_t *acc)
     //Accept and incoming connection
     sd->acceptevent = b_input_add(sd->socket_desc,B_EV_IO_READ,(b_event_handler)connection_accept,ic);
     //imcb_connected(ic);
-    imcb_log(ic,"Connected");
+    //imcb_log(ic,"Connected");
     ic->flags &= ~(OPT_PONGS);
 #ifdef never
     int sockfd, portno, n;
@@ -123,7 +130,6 @@ static void androidsms_login(account_t *acc)
     imcb_log(ic, "sent contact request (init)");
 #endif
 #endif
-    imcb_log(ic, "UDP setup");
     setup_udp(sd,acc);
 
     return;
@@ -540,10 +546,10 @@ static void send_contact_request(account_t *acc)
     struct sockaddr_in serv_addr;
     struct hostent *phoneserver;
 
-    imcb_log(acc->ic, "Send contact request");
+    imcb_log(acc->ic, "Sending contact request to %s:%s", set_getstr(&acc->set, "server"), set_getstr(&acc->set, "port"));
 
-    //portno=8888;
     phoneserver=gethostbyname( set_getstr(&acc->set, "server") );
+
     if (phoneserver){
         portno=set_getint(&acc->set, "port");
         sockfd=socket(AF_INET, SOCK_STREAM, 0);
@@ -589,7 +595,8 @@ static void send_contact_request(account_t *acc)
         write(sockfd,contactquery,strlen(contactquery));
         printf("wrote\n");
         close(sockfd);
-    }
+    } else 
+        imcb_log(acc->ic, "Couldn't resolve hostname: %s", set_getstr(&acc->set, "server"));
 }
 
 static void register_withserver(struct im_connection *ic)
@@ -974,7 +981,7 @@ void init_plugin(void)
 {
     struct prpl *ret = g_new0(struct prpl, 1);
 
-    ret->name = "android-sms";
+    ret->name = "bitldroid";
     ret->login = androidsms_login;
     ret->init = androidsms_init;
     ret->logout = androidsms_logout;
