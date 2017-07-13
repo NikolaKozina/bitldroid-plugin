@@ -73,7 +73,7 @@ static void androidsms_login(account_t *acc)
     {
         //print the error message
         perror("bind failed. Error");
-        imcb_log(ic,"Binding failed");
+        imcb_log(ic,"Binding failed", strerror(errno));
         close(sd->socket_desc);
         return;
     }
@@ -85,7 +85,7 @@ static void androidsms_login(account_t *acc)
 
     //Accept and incoming connection
     sd->acceptevent = b_input_add(sd->socket_desc,B_EV_IO_READ,(b_event_handler)connection_accept,ic);
-    imcb_connected(ic);
+    //imcb_connected(ic);
     imcb_log(ic,"Connected");
     ic->flags &= ~(OPT_PONGS);
 #ifdef never
@@ -250,6 +250,7 @@ void handle_contact(struct im_connection *ic, char* contactline)
     char *namea;
     int len;
     printf("handle contact\n");
+    imcb_connected(ic);
 
     if ((sub=strstr(contactline,"::"))!=NULL)
     {
@@ -539,6 +540,8 @@ static void send_contact_request(account_t *acc)
     struct sockaddr_in serv_addr;
     struct hostent *phoneserver;
 
+    imcb_log(acc->ic, "Send contact request");
+
     //portno=8888;
     phoneserver=gethostbyname( set_getstr(&acc->set, "server") );
     if (phoneserver){
@@ -687,11 +690,11 @@ static void setup_udp(struct sms_data *sd, account_t *acc)
         perror("bind");
         exit(1);
     }
-    send_contact_request(acc);
 
     //udp_receive
     b_input_add(sd->udp_socket,B_EV_IO_READ,(b_event_handler)udp_receive,acc);
     imcb_log(ic,"receiver added");
+    send_contact_request(acc);
 
 }
 
