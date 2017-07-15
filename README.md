@@ -1,9 +1,9 @@
 BitlDroid-plugin - BitlBee plugin for SMS messaging on Android phones
 =========
 
-- Use in conjunction with BitlDroid-app
+- Use in conjunction with [BitlDroid-app](https://github.com/NikolaKozina/bitldroid-app)
 - Android phone and BitlBee server must be on the same network
-- *NO ENCRYPTION/AUTHENTICATION* - All messages are sent in the clear and anyone on the network can connect to your phone and send SMS messages
+- *NO ENCRYPTION/AUTHENTICATION* yet - All messages are sent in the clear and anyone on the network can connect to your phone and send SMS messages
 
 Building
 --------
