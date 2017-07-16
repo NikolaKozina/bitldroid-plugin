@@ -24,6 +24,7 @@ struct sms_data {
 };
 
 static void setup_udp(struct sms_data*, account_t *acc );
+static void send_contact_request(account_t *acc);
 static gboolean udp_receive(gpointer data, gint fd, b_input_condition cond);
 static gboolean connection_accept(gpointer data, gint fd, b_input_condition cond);
 static gboolean connection_receive(gpointer data, gint fd, b_input_condition cond);
@@ -40,7 +41,6 @@ static void androidsms_login(account_t *acc)
     struct im_connection *ic = imcb_new(acc);
     struct sms_data *sd = g_new0(struct sms_data, 1);
 
-#ifndef NEVER
     ic->proto_data = sd;
 
     imcb_log(ic, "Connecting");
@@ -95,42 +95,8 @@ static void androidsms_login(account_t *acc)
     //imcb_connected(ic);
     //imcb_log(ic,"Connected");
     ic->flags &= ~(OPT_PONGS);
-#ifdef never
-    int sockfd, portno, n;
-    struct sockaddr_in serv_addr;
-    struct hostent *phoneserver;
-
-    //portno=8888;
-    portno=set_getint(&acc->set, "port");
-    sockfd=socket(AF_INET, SOCK_STREAM, 0);
-    phoneserver=gethostbyname( set_getstr(&acc->set, "server") );
-    bzero((char *) &serv_addr,sizeof(serv_addr));
-    serv_addr.sin_family=AF_INET;
-    bcopy((char *)phoneserver->h_addr,
-            (char *)&serv_addr.sin_addr.s_addr,
-            phoneserver->h_length);
-    serv_addr.sin_port=htons(portno);
-    printf("sending contact request  (init) to %s\n", set_getstr(&acc->set, "server"));
-
-    /*
-       struct timeval timeout;
-       timeout.tv_sec=2;
-       timeout.tv_usec=0;
-       if (setsockopt(sockfd,SOL_SOCKET,SO_RCVTIMEO, (char*)&timeout,sizeof(timeout))<0)
-       error("socket option set failed\n");
-       */
-    int retval;
-
-    connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr));
-
-    printf("connected %i\n",retval);
-    char* contactquery= "sendcontacts\n";
-    write(sockfd,contactquery,strlen(contactquery));
-    close(sockfd);
-    imcb_log(ic, "sent contact request (init)");
-#endif
-#endif
     setup_udp(sd,acc);
+    send_contact_request(acc);
 
     return;
 }
@@ -702,7 +668,6 @@ static void setup_udp(struct sms_data *sd, account_t *acc)
     //udp_receive
     b_input_add(sd->udp_socket,B_EV_IO_READ,(b_event_handler)udp_receive,acc);
     imcb_log(ic,"receiver added");
-    send_contact_request(acc);
 
 }
 
