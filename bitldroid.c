@@ -586,6 +586,7 @@ static void send_contact_request(account_t *acc)
             printf("connected %i\n",retval);
             if (retval) {
                 printf("  errno %i\n",errno);
+                imcb_log(acc->ic, "Error requesting contacts: %s",strerror(errno));
                 perror("requesting contacts");
             }
             printf("  portno %d\n",portno);
