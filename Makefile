@@ -10,5 +10,6 @@ install:
 	cp $(TARGETSO) $(PLUGINDIR)/
 tags:
 	ctags $(TAGFILES) bitldroid.c
+	find $(TAGFILES) -iname '*.[hc]' > cscope.files
 	cscope -b
 .PHONY: tags

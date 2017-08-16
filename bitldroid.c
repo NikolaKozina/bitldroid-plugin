@@ -23,6 +23,7 @@ struct sms_data {
     gint acceptevent;
 };
 
+
 static void setup_udp(struct sms_data*, account_t *acc );
 static void send_contact_request(account_t *acc);
 static gboolean udp_receive(gpointer data, gint fd, b_input_condition cond);
@@ -45,9 +46,6 @@ static void androidsms_login(account_t *acc)
 
     imcb_log(ic, "Connecting");
 
-    printf("SMSLISTENER\n");
-    //imcb_log(ic,"SMSListener starting..");
-
     int client_sock , c , read_size;
     struct sockaddr_in server , client;
 
@@ -62,18 +60,14 @@ static void androidsms_login(account_t *acc)
     if (sd->socket_desc == -1)
     {
         printf("Could not create socket");
-        //imcb_log(ic,"Could not create socket");
+        imcb_log(ic,"Could not create socket");
     }
-    //puts("Socket created");
-
-    //imcb_log(ic,"Preparing socket...");
     //Prepare the sockaddr_in structure
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = INADDR_ANY;
     server.sin_port = htons( set_getint(&acc->set, "port") );
 
     //Bind
-    //imcb_log(ic,"Binding...");
     printf("bind TCP\n");
     imcb_log(ic, "Binding listen socket on port %d", set_getint(&acc->set, "port"));
     if( bind(sd->socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0)
@@ -84,16 +78,12 @@ static void androidsms_login(account_t *acc)
         close(sd->socket_desc);
         return;
     }
-    //puts("bind done");
 
     //Listen
     listen(sd->socket_desc , 3);
-    //imcb_log(ic,"Listening...");
 
-    //Accept and incoming connection
+    //Accept an incoming connection
     sd->acceptevent = b_input_add(sd->socket_desc,B_EV_IO_READ,(b_event_handler)connection_accept,ic);
-    //imcb_connected(ic);
-    //imcb_log(ic,"Connected");
     ic->flags &= ~(OPT_PONGS);
     setup_udp(sd,acc);
     send_contact_request(acc);
@@ -118,19 +108,13 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
     memcpy(androidmessage+strlen(who)+2,message,strlen(message));
     androidmessage[strlen(who)+strlen(message)+2]='\0';
 
-    //imcb_buddy_msg(ic, "skypeconsole", androidmessage, 0, 0);
-
-    //imcb_log(ic, androidmessage);
-
     //send message
     int sockfd, portno, n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
 
-    //portno=8888;
     portno=set_getint(&acc->set, "port");
     sockfd=socket(AF_INET, SOCK_STREAM, 0);
-    //server=gethostbyname("192.168.1.115");
     server=gethostbyname( set_getstr(&acc->set, "server") );
     bzero((char *) &serv_addr,sizeof(serv_addr));
     serv_addr.sin_family=AF_INET;
@@ -153,7 +137,30 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
     printf("Errno: %d\n",errno);
     printf("who: %s\n",who);
     if (retval>=0) 
-        write(sockfd,androidmessage,strlen(androidmessage));
+        //Check if message was a command
+        if (message[0]=='\\')
+        {
+            bee_user_t *bu;
+            bu=imcb_buddy_by_handle(ic,who);
+            printf("NN: \n%s\n%s\n\n", bu->nick, bu->data);
+
+            char* historyRequest;
+            historyRequest=g_malloc(2+strlen(bu->data)+1);
+            historyRequest[0]='H';
+            historyRequest[1]=':';
+            memcpy(historyRequest+2,bu->data,strlen(bu->data));
+            historyRequest[strlen(bu->data)+2]='\0';
+            write(sockfd,historyRequest,strlen(historyRequest));
+            int requestTextLen = 30;
+            char* requestText = g_malloc(requestTextLen);
+            g_snprintf(requestText,requestTextLen,"%c%d========History Request========%c",0x03,3,0x03);
+            printf("HISTORY REQUEST: |%s| %d\n",historyRequest, strlen(bu->data));
+            imcb_buddy_msg(ic,who,requestText,0,0);
+            g_free(requestText);
+
+        } else {
+            write(sockfd,androidmessage,strlen(androidmessage));
+        }
     else
     {
         int bufsize;
@@ -170,11 +177,8 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
         g_free(errmessage);
     }
 
-    printf("gfree2\n");
     g_free(androidmessage);
-    printf("gfree2o\n");
     close(sockfd);
-
 
     /* Unused parameter */
     flags = flags;
@@ -184,13 +188,7 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
     if (ptr)
         *ptr = '\0';
 
-    //if (!strncmp(who, "skypeconsole", 12))
-    //st = skype_printf(ic, "%s\n", message);
-    //else
-    //st = skype_printf(ic, "MESSAGE %s %s\n", nick, message);
-    printf("gfree3\n");
     g_free(nick);
-    printf("gfree3o\n");
     printf("message sent(?)\n");
 
     return st;
@@ -198,7 +196,6 @@ static int androidsms_buddy_msg(struct im_connection *ic, char *who, char *messa
 
 void format_phonenumber(char* number)
 {
-    //printf("format number\n");
     int off=0;
     int len;
     len=strlen(number);
@@ -210,7 +207,6 @@ void format_phonenumber(char* number)
         if (isdigit(number[i]))
             number[off++]=number[i];
     number[off]='\0';
-    //printf("number[%s]\n",number);
 }
 
 //Handle getting contact list from phone
@@ -219,6 +215,7 @@ void handle_contact(struct im_connection *ic, char* contactline)
     struct sms_data *sd=ic->proto_data;
     char *sub;
     char *number;
+    char *rawnumber;
     char *namea;
     int len;
     printf("handle contact\n");
@@ -229,48 +226,36 @@ void handle_contact(struct im_connection *ic, char* contactline)
         number=(char*)g_malloc(sizeof(char)*(sub-contactline)+100); 
         if ((strstr(contactline,";"))!=NULL){
             len=strstr(contactline,";")-sub;
-            //printf("   LEN: %d\n",len);
             namea=g_malloc(sizeof(char)*(len+1));
-            //printf("MALLOC6: %x size: %d\n",namea,len+1);
             memcpy(number,contactline+1,sub-contactline-1);
-            //printf("   copy: %d\n",sub-contactline-1);
-            //printf("   number: %s\n",number);
             memcpy(namea, sub+2, len-2);//qq added +2 nonsense (x2)
             namea[len-2]='\0';
-            //printf("   namea: %s\n",namea);
-
-            //printf("   sub-contactline: %d\n",sub-contactline);
             number[sub-contactline-1]='\0';
-            format_phonenumber(number);
-            //printf("LAGAGLAG\n");
-            //imcb_buddy_msg(ic, "skypeconsole", number, 0, 0);
-            //imcb_buddy_msg(ic, "skypeconsole", namea, 0, 0);
-            //imcb_buddy_msg(ic, "skypeconsole", "   ", 0, 0);
-            len=strlen(number);
-            if (len>10)
-                //printf("**WARNING**:  abnormal length!  %d\n",len);
-                while(sd->lock_buddy>0)
-                {
 
-                }
+            rawnumber=g_malloc(strlen(number)+1);
+            strcpy(rawnumber,number);
+
+            printf("COPY\n\n\n\n%s\n%s\n\n\n\n",number,rawnumber);
+
+            format_phonenumber(number); //ZZ
+            len=strlen(number);
+            while(sd->lock_buddy>0) {}
+
             sd->lock_buddy=1;
 
             printf("   start add buddy: [%s] [%s] \n", number,namea);
 
             imcb_add_buddy(ic, number, NULL);
-            //printf("ADDED\n");
+            bee_user_t *bu;
             imcb_buddy_nick_hint(ic,number,namea);//qq used to be namea instead of asdf
             imcb_buddy_status(ic,number,BEE_USER_ONLINE,NULL,NULL);
-            //printf(" done add buddy: %s\n", number);
+            bu=imcb_buddy_by_handle(ic,number);
+            bu->data=rawnumber;//g_malloc(len(rawnumber));
+            
             sd->lock_buddy=0;
-            //printf("FREE\n");
-            printf("gfree4\n");
             g_free(namea);
-            printf("gfree4o\n");
         }
-        printf("gfree5\n");
         g_free(number);
-        printf("gfree5o\n");
     }
 }
 
@@ -285,22 +270,8 @@ static void androidsms_add_buddy(struct im_connection *ic, char *who, char *grou
         *ptr = '\0';
 
     //ZZ
-    if (!group) {
-        //skype_printf(ic, "SET USER %s BUDDYSTATUS 2 Please authorize me\n",
-        //		nick);
-        printf("gfree6\n");
+    if (!group)
         g_free(nick);
-        printf("gfree6o\n");
-    } else {
-        //struct skype_group *sg = skype_group_by_name(ic, group);
-
-        //if (!sg) {
-        //skype_printf(ic, "CREATE GROUP %s", group);
-        //sd->pending_user = g_strdup(nick);
-        //} else {
-        //skype_printf(ic, "ALTER GROUP %d ADDUSER %s", sg->id, nick);
-        //}
-    }
 
 }
 
@@ -326,7 +297,6 @@ void handle_message(struct im_connection *ic, char* message, int msglen)
     format_phonenumber(phonenumber);
     
     imcb_buddy_msg(ic, phonenumber, text, 0, 0);
-
 
     //Run user defined script (script setting)
     char* script;//="/home/impulse/src/scripts/inc/android_sms_message";
@@ -380,13 +350,11 @@ void handle_sentnotification(struct im_connection *ic, char* messageline, int le
     messageline[len]='\0';
     start=index(messageline,'X')-messageline;
     end=index(messageline,':')-messageline;
-    //return;
 
     strid=g_malloc(sizeof(char)*strlen(messageline));
     strresult=g_malloc(sizeof(char)*strlen(messageline));
     memcpy(strid,messageline, strlen(messageline));
     memcpy(strresult,messageline, strlen(messageline));
-    //sprintf(
     id=strchr(messageline,'/')+1-messageline;
     result=strchr(messageline+id,'/')+1-messageline;
     message=index(messageline,':')+2;
@@ -427,31 +395,22 @@ void handle_sentnotification(struct im_connection *ic, char* messageline, int le
     switch(result)
     {
         case -1:
-            //imcb_log(ic, "OK");
             reason=success;
             color=2;
             break;
         case 1:
-            //imcb_log(ic, "FAILED");
-            //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
             reason=fail_general;
             color=4;
             break;
         case 2:
-            //imcb_log(ic, "PDU");
-            //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
             reason=fail_pdu;
             color=4;
             break;
         case 3:
-            //imcb_log(ic, "NO SERVICE");
-            //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
             reason=fail_service;
             color=4;
             break;
         case 4:
-            //imcb_log(ic, "NO SERVICE");
-            //imcb_buddy_msg(ic, number, "    FAILED", 0, 0);
             reason=fail_4;
             color=4;
             break;
@@ -467,43 +426,79 @@ void handle_sentnotification(struct im_connection *ic, char* messageline, int le
     }
     g_free(number);
 
-
-
-
-
     printf("full:%s\n",messageline);
     printf("%d - %d\n",start,end);
 
 }
 
+void handle_history_receive(struct im_connection *ic, char* message, int len)
+{
+    char* number;
+    int addressLen, messageCount, messageLen;
+    printf("HISTORY RECEIVE %d\n",len);
+////
+    addressLen = (message[0]<<24) + (message[1]<<16) + ((unsigned char)message[2]<<8) + (unsigned char)message[3] ;
+    printf(" %d \n\n",addressLen);
+    number=g_malloc(addressLen+1);//+1 for terminating \0
+    message+=4;//integer has been handled, move over by 4 bytes
+////
+    memcpy(number,message,addressLen);
+    number[addressLen]='\0';
+    printf("N |%s|\n",number);
+    format_phonenumber(number);
+
+    message+=addressLen;
+////
+    messageCount = (message[0]<<24) + (message[1]<<16) + ((unsigned char)message[2]<<8) + (unsigned char)message[3] ;
+    printf("messageCount: %d \n",messageCount);
+    message+=4;
+    int i;
+    for (i=0;i<messageCount;i++)
+    {
+        unsigned char messageType;
+        char* body;
+        messageType=(unsigned char)message[0];
+        message+=1;
+        messageLen = (message[0]<<24) + (message[1]<<16) + ((unsigned char)message[2]<<8) + (unsigned char)message[3] ;
+        message+=4;
+        body=g_malloc(messageLen+1);
+        memcpy(body,message,messageLen);
+        body[messageLen]='\0';
+        message+=messageLen;
+        printf("T: %x L: %d V: |%s|\n",(unsigned char) messageType,messageLen,body);
+
+        if (messageType==0)
+            imcb_buddy_msg(ic,number,body,0,0);
+        else if (messageType==2)
+            imcb_buddy_msg(ic,number,body,OPT_SELFMESSAGE,0);
+        else
+            imcb_buddy_msg(ic,number,"<MMS>",OPT_SELFMESSAGE,0);
+            
+
+        g_free(body);
+        
+    }
+
+    g_free(number);
+}
+
 static void androidsms_init(account_t *acc)
 {
     struct im_connection *ic = acc->ic;
-    //imcb_log(NULL, "Init androidsms");
     printf(ic, "Init androidsms");
     struct sms_data *sd = g_new0(struct sms_data, 1);
-    printf("SEGFAULT00\n");
     sd->lock_buddy=0;
 
     set_t *s;
-    printf("SEGFAULT00\n");
 
     s = set_add(&acc->set, "server", ANDROIDSMS_DEFAULT_SERVER, NULL,
             acc);
 
-    printf("SEGFAULT00\n");
-
-    //s->flags |= ACC_SET_OFFLINE_ONLY;
-
     s = set_add(&acc->set, "port", ANDROIDSMS_DEFAULT_PORT, set_eval_int, acc);
     s->flags |= ACC_SET_OFFLINE_ONLY;
-    printf("SEGFAULT00\n");
 
     s = set_add(&acc->set, "script", ANDROIDSMS_DEFAULT_SCRIPT, set_eval_int, acc);
     s->flags |= ACC_SET_OFFLINE_ONLY;
-
-    //if (set_getbool(&acc->set, "skypeconsole"))
-    //	imcb_add_buddy(ic, "skypeconsole", NULL);
 }
 
 static void send_contact_request(account_t *acc)
@@ -526,9 +521,7 @@ static void send_contact_request(account_t *acc)
                 (char *)&serv_addr.sin_addr.s_addr,
                 phoneserver->h_length);
         serv_addr.sin_port=htons(portno);
-        //printf("sending contact request  (function) to |%s:%s\n", set_getstr(&acc->set, "server"), set_getstr(&acc->set, "port"));
 
-        ///*
         struct timeval timeout;
         timeout.tv_sec=2;
         timeout.tv_usec=0;
@@ -536,7 +529,7 @@ static void send_contact_request(account_t *acc)
             error("socket option set failed\n");
         if (setsockopt(sockfd,SOL_SOCKET,SO_SNDTIMEO, (char*)&timeout,sizeof(timeout))<0)
             error("socket option set failed\n");
-        // */
+
         int retval;
 
         retval=-2;
@@ -678,6 +671,7 @@ static void androidsms_chat_msg(struct groupchat *gc, char *message, int flags)
 
 static gboolean connection_accept(gpointer data, gint fd, b_input_condition cond)
 {
+    //Receive a message from client
     struct im_connection *ic=data;
     struct sms_data *sd=ic->proto_data;
     int client_sock;
@@ -689,13 +683,10 @@ static gboolean connection_accept(gpointer data, gint fd, b_input_condition cond
     client_sock = accept(sd->socket_desc, (struct sockaddr *)&client, (socklen_t*)&c);
 
     b_input_add(client_sock,B_EV_IO_READ,(b_event_handler)connection_receive,ic);
-    //imcb_log(ic,"Connection accepted");
     if (client_sock < 0) {
         perror("accept failed");
     }
-    //puts("Connection accepted");
 
-    //Receive a message from client
 }
 
 static gboolean connection_receive(gpointer data, gint fd, b_input_condition cond)
@@ -712,9 +703,6 @@ static gboolean connection_receive(gpointer data, gint fd, b_input_condition con
     static int32_t textlen;
     char *headStart;
     char *textStart;
-
-    //imcb_add_buddy(ic, "12345678", NULL);
-    //return;
 
     printf("connection receive\n");
     read_size = recv(fd, client_message , READ_BUFFERSIZE, 0); //Reserve space for changing last char in buffer to \0
@@ -752,7 +740,6 @@ static gboolean connection_receive(gpointer data, gint fd, b_input_condition con
                             if (inText+ readlen >= textlen){//Is there enough data to close out the last message we were reading?
                                 memcpy(fulltext, textStart+1, textlen-inText+1);
                                 inText=0;
-                                //fulltext[textlen+1]='\0';
                                 connection_receive_parse(ic,fulltext,textlen,header[1]);
                                 g_free(header);
                                 g_free(fulltext);
@@ -775,7 +762,10 @@ static gboolean connection_receive(gpointer data, gint fd, b_input_condition con
                 }
             }
         } else if (inHead){
-            if ((textStart=memchr(client_message, 0x02, read_size))>0){//Is there a text start (header end) in the stream?
+            printf("client_message[%d]=%x\n",5,(unsigned char)client_message[5]);
+            //if ((textStart=memchr(client_message, 0x02, read_size))>0){//Is there a text start (header end) in the stream?
+            if (client_message[6-inHead]==0x02){//Is there a text start (header end) in the stream?
+                textStart=client_message+6-inHead;
                 printf("textStart-client_message: %d\n",textStart-client_message);
                 printf("inHead: %d\n",inHead);
                 if ((textStart-client_message)+inHead==6){ //Is this a good header?
@@ -843,11 +833,9 @@ void connection_receive_parse(struct im_connection *ic, char* message, int len, 
     char *offset;
     char *line;
 
-    //imcb_add_buddy(ic, number, NULL);
-
     switch(type){
         case 'C':
-            printf("CONTACT MESSAGE!!!!!!!!!!!!!!!!!!!!!!!\n");
+            printf("CONTACT MESSAGE\n");
             offset=message;
             while(line=strchr(offset,'X'))
             {
@@ -865,6 +853,10 @@ void connection_receive_parse(struct im_connection *ic, char* message, int len, 
             break;
         case 'S':
             handle_sentnotification(ic,message,len);
+            break;
+        case 'H':
+            handle_history_receive(ic,message,len);
+            break;
     }
 
 }
@@ -901,29 +893,14 @@ static gboolean udp_receive(gpointer data, gint fd, b_input_condition cond)
     imcb_log(ic, "server address: %s",serveraddress);
     imcb_log(ic, "  retval: %d",set_setstr(&acc->set,"server",serveraddress));
     imcb_log(ic, "  set to: %s",set_getstr(&acc->set,"server"));
+    g_free(serveraddress);
 
-    //printf("numbytes: %d \n",numbytes);
     buf[numbytes]=0;
     printf("%s\n",buf);
-
-    //pthread_t sendreq;
-    //pthread_create(&sendreq,NULL,(void*)send_contact_request,acc);
-
-    //sleep(1);
-
-
-    //sleep(1);
-
-
-
 
     send_contact_request(acc);
     register_withserver(ic);
 
-
-
-
-    //imcb_log(ic,"got: %s ",&buf);
     imcb_log(ic, "UDP received");
 }
 
@@ -933,14 +910,21 @@ static void androidsms_logout(struct im_connection *ic)
     struct sms_data *sd=ic->proto_data;
     imcb_log(ic, "logging out");
     b_event_remove(sd->acceptevent);
-    printf("SEGFAULT\n");
     printf("%X\n",sd);
     close(sd->socket_desc);
     close(sd->udp_socket);
-    printf("NAH\n");
     g_free(sd);
     imc_logout(ic, TRUE);
-    //close(sd->socket_desc);
+}
+
+static void user_data_add(struct bee_user *bu)
+{
+
+}
+
+static void user_data_free(struct bee_user *bu)
+{
+    g_free(bu->data);
 }
 
 void init_plugin(void)
@@ -952,18 +936,11 @@ void init_plugin(void)
     ret->init = androidsms_init;
     ret->logout = androidsms_logout;
     ret->buddy_msg = androidsms_buddy_msg;
-    //ret->get_info = skype_get_info;
-    //ret->set_my_name = skype_set_my_name;
-    //ret->away_states = skype_away_states;
-    //ret->set_away = skype_set_away;
     ret->add_buddy = androidsms_add_buddy;
-    //ret->remove_buddy = skype_remove_buddy;
+    ret->buddy_data_add = user_data_add;
+    ret->buddy_data_free = user_data_free;
     ret->chat_msg = androidsms_chat_msg;
-    //ret->chat_leave = skype_chat_leave;
-    //ret->chat_invite = skype_chat_invite;
-    //ret->chat_with = skype_chat_with;
     ret->handle_cmp = g_strcasecmp;
-    //ret->chat_topic = skype_chat_topic;
 #if BITLBEE_VERSION_CODE > BITLBEE_VER(3, 0, 1)
     //ret->buddy_action_list = skype_buddy_action_list;
     //ret->buddy_action = skype_buddy_action;
